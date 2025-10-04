@@ -3,64 +3,202 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>Apartman Maliyeti (Demo)</title>
-  <!-- Tailwind CDN (optional, for quick styling) -->
+  <title>Apartman Maliyet Hesaplayıcı</title>
+  <meta name="description" content="Aylık apartman/site işletme maliyetlerini kalem kalem ekleyip toplamı ve daire başı aidatı hesaplayın." />
   <script src="https://cdn.tailwindcss.com"></script>
   <style>
     :root { color-scheme: light dark; }
     body { min-height: 100dvh; }
+    .card { @apply bg-white border rounded-2xl shadow-sm; }
+    .btn  { @apply px-3 py-2 rounded-xl border shadow-sm hover:shadow transition; }
+    .field{ @apply w-full border rounded-xl px-3 py-2; }
   </style>
 </head>
-<body class="bg-white text-gray-900">
-  <main class="max-w-3xl mx-auto p-6">
-    <h1 class="text-2xl font-bold mb-4">GitHub Pages yayında 🎉</h1>
-    <p class="mb-6">Bu sayfa React (UMD) + Babel Standalone ile tarayıcıda derleniyor.
-      Aşağıdaki kutu React bileşenidir.</p>
+<body class="bg-gray-50 text-gray-900">
+  <main class="max-w-5xl mx-auto p-6 space-y-6">
+    <header class="space-y-2">
+      <h1 class="text-2xl font-bold">Apartman Maliyet Hesaplayıcı</h1>
+      <p class="text-gray-600">Kalemleri ekle/sil, miktarları gir, toplam gider ve daire başı aidatı anında gör.</p>
+    </header>
 
-    <div id="root" class="border rounded-xl p-5 shadow-sm"></div>
+    <section class="grid md:grid-cols-3 gap-4">
+      <div class="card p-5">
+        <div class="text-sm text-gray-500">Daire Sayısı</div>
+        <div class="text-3xl font-semibold" id="unitCountDisplay">—</div>
+        <div class="mt-3 flex items-center gap-2">
+          <input id="unitCount" type="number" min="1" value="20" class="field" />
+        </div>
+      </div>
+      <div class="card p-5">
+        <div class="text-sm text-gray-500">Toplam Aylık Gider</div>
+        <div class="text-3xl font-semibold" id="totalDisplay">—</div>
+        <div class="mt-2 text-xs text-gray-500">TL/ay</div>
+      </div>
+      <div class="card p-5">
+        <div class="text-sm text-gray-500">Daire Başı Aidat</div>
+        <div class="text-3xl font-semibold" id="perUnitDisplay">—</div>
+        <div class="mt-2 text-xs text-gray-500">TL/ay</div>
+      </div>
+    </section>
 
-    <hr class="my-8" />
-    <details class="text-sm">
-      <summary class="cursor-pointer font-medium">Teknik notlar</summary>
-      <ul class="list-disc ml-6 mt-3 space-y-1">
-        <li>CDN’ler <code>https</code> ile çağrılıyor (mixed content yok).</li>
-        <li>JSX derleme için <code>Babel Standalone</code> kullanıldı.</li>
-        <li>SPA ise <code>HashRouter</code> kullanın (yenilemede 404 olmaz).</li>
-      </ul>
-    </details>
+    <section id="root" class="card p-5"></section>
+
+    <footer class="text-sm text-gray-500">
+      <details class="mt-4">
+        <summary class="cursor-pointer font-medium">Teknik Notlar</summary>
+        <ul class="list-disc ml-6 mt-2 space-y-1">
+          <li>Tek dosyalık sürüm. React 18 UMD + Babel Standalone + Tailwind CDN.</li>
+          <li>GitHub Pages, CodePen ve Tilda (HTML Embed) ile uyumlu.</li>
+          <li>Veriler tarayıcı <code>localStorage</code>'a kaydedilir.</li>
+        </ul>
+      </details>
+    </footer>
   </main>
 
   <!-- React 18 UMD -->
   <script crossorigin src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
   <script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
-  <!-- Babel Standalone (only for development / quick demos) -->
+  <!-- Babel Standalone -->
   <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
 
-  <!-- Your JSX/TSX (compiled in the browser) -->
+  <!-- App (JSX) -->
   <script type="text/babel">
-    const { useState } = React;
+    const { useEffect, useMemo, useState } = React;
 
-    function Box() {
-      const [count, setCount] = useState(0);
+    function currency(v) {
+      if (!isFinite(v)) return "0";
+      try {
+        return new Intl.NumberFormat('tr-TR', { maximumFractionDigits: 0 }).format(v);
+      } catch {
+        return String(Math.round(v));
+      }
+    }
+
+    const DEFAULT_ITEMS = [
+      { id: crypto.randomUUID(), name: "Personel - Temizlik", amount: 25000, note: "" },
+      { id: crypto.randomUUID(), name: "Asansör Bakım", amount: 1800, note: "" },
+      { id: crypto.randomUUID(), name: "Jeneratör Bakım", amount: 1200, note: "" },
+      { id: crypto.randomUUID(), name: "Havuz Kimyasal", amount: 3500, note: "" },
+      { id: crypto.randomUUID(), name: "Elektrik Ortak Alan", amount: 4200, note: "" },
+    ];
+
+    function App() {
+      const [items, setItems] = useState(() => {
+        const saved = localStorage.getItem("ap_cost_items");
+        return saved ? JSON.parse(saved) : DEFAULT_ITEMS;
+      });
+      const [unitCount, setUnitCount] = useState(() => {
+        const saved = localStorage.getItem("ap_unit_count");
+        return saved ? Number(saved) : 20;
+      });
+
+      useEffect(() => {
+        localStorage.setItem("ap_cost_items", JSON.stringify(items));
+      }, [items]);
+      useEffect(() => {
+        localStorage.setItem("ap_unit_count", String(unitCount));
+      }, [unitCount]);
+
+      const total = useMemo(() => items.reduce((s, it) => s + (Number(it.amount) || 0), 0), [items]);
+      const perUnit = useMemo(() => total / Math.max(1, Number(unitCount || 1)), [total, unitCount]);
+
+      useEffect(() => {
+        // Update header boxes (outside React for simplicity in this single file)
+        document.getElementById('unitCountDisplay').textContent = unitCount || "—";
+        document.getElementById('totalDisplay').textContent = currency(total);
+        document.getElementById('perUnitDisplay').textContent = currency(perUnit);
+      }, [unitCount, total, perUnit]);
+
+      useEffect(() => {
+        const el = document.getElementById('unitCount');
+        const handler = (e) => setUnitCount(Number(e.target.value) || 0);
+        el.addEventListener('input', handler);
+        return () => el.removeEventListener('input', handler);
+      }, []);
+
+      function addItem() {
+        setItems(prev => [...prev, { id: crypto.randomUUID(), name: "", amount: 0, note: "" }]);
+      }
+      function removeItem(id) {
+        setItems(prev => prev.filter(x => x.id !== id));
+      }
+      function updateItem(id, patch) {
+        setItems(prev => prev.map(x => x.id === id ? { ...x, ...patch } : x));
+      }
+      function resetAll() {
+        if (confirm("Tüm alanları varsayılan değerlere döndür?")) {
+          setItems(DEFAULT_ITEMS);
+          setUnitCount(20);
+        }
+      }
+
       return (
-        <div className="space-y-4">
-          <div className="text-lg">Merhaba! React bileşeni çalışıyor ✅</div>
-          <button
-            className="px-4 py-2 rounded-lg border shadow-sm hover:shadow transition"
-            onClick={() => setCount(c => c + 1)}
-            aria-label="Sayaç butonu"
-          >
-            Sayaç: {count}
-          </button>
-          <p className="text-sm text-gray-600">
-            Eğer bu kutuyu görüyorsan, GitHub Pages ve CDN betikleri doğru yükleniyor demektir.
-          </p>
+        <div className="space-y-5">
+          <div className="flex flex-wrap gap-2">
+            <button className="btn" onClick={addItem}>➕ Kalem ekle</button>
+            <button className="btn" onClick={resetAll}>↺ Sıfırla</button>
+            <a className="btn" href="https://selmanguven.github.io/apartman/" target="_blank" rel="noreferrer">Sayfayı Aç</a>
+          </div>
+
+          <div className="overflow-x-auto">
+            <table className="min-w-full bg-white rounded-xl overflow-hidden">
+              <thead>
+                <tr className="bg-gray-100 text-left text-sm">
+                  <th className="p-3 w-[40%]">Kalem</th>
+                  <th className="p-3 w-[20%]">Tutar (TL/ay)</th>
+                  <th className="p-3 w-[30%]">Not</th>
+                  <th className="p-3 w-[10%]"></th>
+                </tr>
+              </thead>
+              <tbody>
+                {items.map((it) => (
+                  <tr key={it.id} className="border-t">
+                    <td className="p-2">
+                      <input
+                        className="field"
+                        placeholder="Örn: Güvenlik"
+                        value={it.name}
+                        onChange={e => updateItem(it.id, { name: e.target.value })}
+                      />
+                    </td>
+                    <td className="p-2">
+                      <input
+                        className="field text-right"
+                        type="number"
+                        min="0"
+                        step="1"
+                        value={it.amount}
+                        onChange={e => updateItem(it.id, { amount: Number(e.target.value) })}
+                      />
+                    </td>
+                    <td className="p-2">
+                      <input
+                        className="field"
+                        placeholder="Opsiyonel açıklama"
+                        value={it.note}
+                        onChange={e => updateItem(it.id, { note: e.target.value })}
+                      />
+                    </td>
+                    <td className="p-2 text-right">
+                      <button className="btn" onClick={() => removeItem(it.id)} aria-label="Sil">🗑️</button>
+                    </td>
+                  </tr>
+                ))}
+                <tr className="bg-gray-50 font-medium">
+                  <td className="p-3">TOPLAM</td>
+                  <td className="p-3 text-right">{currency(total)}</td>
+                  <td className="p-3 text-gray-500">Daire başı aidat ≈ <strong>{currency(perUnit)} TL</strong></td>
+                  <td></td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
         </div>
       );
     }
 
     const root = ReactDOM.createRoot(document.getElementById('root'));
-    root.render(<Box />);
+    root.render(<App />);
   </script>
 </body>
 </html>
